@@ -41,9 +41,9 @@ const HARDHAT_PRIVATE_KEYS = [
   "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // account[2] seller
 ];
 
-const deployerWallet = new ethers.Wallet(HARDHAT_PRIVATE_KEYS[0], provider);
-const buyerWallet = new ethers.Wallet(HARDHAT_PRIVATE_KEYS[1], provider);
-const sellerWallet = new ethers.Wallet(HARDHAT_PRIVATE_KEYS[2], provider);
+const deployerWallet = new ethers.NonceManager(new ethers.Wallet(HARDHAT_PRIVATE_KEYS[0], provider));
+const buyerWallet = new ethers.NonceManager(new ethers.Wallet(HARDHAT_PRIVATE_KEYS[1], provider));
+const sellerWallet = new ethers.NonceManager(new ethers.Wallet(HARDHAT_PRIVATE_KEYS[2], provider));
 
 // Load ABIs
 const assetABI = loadABI("AssetContract");
