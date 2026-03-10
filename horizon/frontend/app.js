@@ -1,23 +1,84 @@
 /**
  * app.js - Frontend JavaScript for Atomic Trade Settlement Platform
  * Communicates with Express backend to interact with the blockchain.
- * Educational prototype using simulated tokens on local Hardhat network.
+ * Blueprint Sketch UI — clean, minimal, no AI tropes.
  */
 
 const API_BASE = "http://localhost:3001";
 
 // ── State ──────────────────────────────────────────────────────────
-let accounts = {};           // { buyer, seller, deployer } loaded from backend
+let accounts = {};
 let currentPortfolioAccount = "buyer";
+
+// ── Parallax Scroll ────────────────────────────────────────────────
+function initParallax() {
+  const layers = document.querySelectorAll(".parallax-layer");
+  let ticking = false;
+
+  window.addEventListener("scroll", () => {
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        const scrollY = window.scrollY;
+        layers.forEach(layer => {
+          const speed = parseFloat(layer.dataset.speed) || 0.02;
+          layer.style.transform = `translateY(${scrollY * speed * -1}px)`;
+        });
+        ticking = false;
+      });
+      ticking = true;
+    }
+  }, { passive: true });
+}
+
+// ── Landing → Dashboard Transition ─────────────────────────────────
+function initLanding() {
+  const landing = document.getElementById("landing-page");
+  const dashboard = document.getElementById("dashboard");
+  const enterBtn = document.getElementById("enter-dashboard-btn");
+
+  // Check if user has visited before in this session
+  if (sessionStorage.getItem("dashboard-visited")) {
+    landing.style.display = "none";
+    dashboard.classList.add("active");
+    onDashboardReady();
+    return;
+  }
+
+  enterBtn.addEventListener("click", () => {
+    landing.classList.add("exit");
+
+    setTimeout(() => {
+      landing.style.display = "none";
+      dashboard.classList.add("active");
+      sessionStorage.setItem("dashboard-visited", "1");
+      onDashboardReady();
+    }, 600);
+  });
+}
+
+// ── Dashboard Entry Animations ─────────────────────────────────────
+function onDashboardReady() {
+  // Use IntersectionObserver for smooth glide-in on sections
+  const sections = document.querySelectorAll(".canvas-section, .table-section");
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("visible");
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1 });
+
+  sections.forEach(section => observer.observe(section));
+
+  // Load data
+  init();
+}
 
 // ── Init ────────────────────────────────────────────────────────────
 async function init() {
   try {
-    // Load deployment info
-    const res = await fetch(`${API_BASE}/portfolio/${ethers_placeholder}`)
-      .catch(() => null);
-
-    // Try to load accounts from health endpoint or directly
     await loadAccounts();
     loadTrades();
   } catch (e) {
@@ -26,13 +87,9 @@ async function init() {
 }
 
 /**
- * Fetch account addresses from backend health + deployment.json
- * We get them via the /portfolio/<known_hardhat_addr> trick.
- * Instead we'll use the /trade/list endpoint to infer accounts,
- * or fall back to the well-known Hardhat addresses.
+ * Load known Hardhat default accounts (deterministic from mnemonic).
  */
 async function loadAccounts() {
-  // Known Hardhat default accounts (deterministic from mnemonic)
   accounts = {
     deployer: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     buyer:    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -54,8 +111,8 @@ async function refreshPortfolio() {
   if (!address) return;
 
   document.getElementById("portfolio-address").textContent = address;
-  document.getElementById("bond-balance").textContent = "…";
-  document.getElementById("set-balance").textContent = "…";
+  document.getElementById("bond-balance").textContent = "...";
+  document.getElementById("set-balance").textContent = "...";
 
   try {
     const res = await fetch(`${API_BASE}/portfolio/${address}`);
@@ -90,7 +147,7 @@ async function createTrade(e) {
   if (!seller || !assetAmt || !payAmt) return;
 
   const btn = document.getElementById("create-btn");
-  setLoading(btn, true, "Creating…");
+  setLoading(btn, true, "Creating...");
 
   try {
     const res = await fetch(`${API_BASE}/trade/create`, {
@@ -109,13 +166,13 @@ async function createTrade(e) {
   } catch (err) {
     showToast("error", "Failed to Create Trade", err.message);
   } finally {
-    setLoading(btn, false, "⚡ Create Trade");
+    setLoading(btn, false, "Create Trade");
   }
 }
 
 // ── Confirm Trade ─────────────────────────────────────────────────────
 async function confirmTrade(tradeId, btn) {
-  setLoading(btn, true, "Confirming…");
+  setLoading(btn, true, "Confirming...");
 
   try {
     const res = await fetch(`${API_BASE}/trade/confirm`, {
@@ -132,13 +189,13 @@ async function confirmTrade(tradeId, btn) {
     await refreshPortfolio();
   } catch (err) {
     showToast("error", "Confirm Failed", err.message);
-    setLoading(btn, false, "✓ Confirm");
+    setLoading(btn, false, "Confirm");
   }
 }
 
 // ── Settle Trade ──────────────────────────────────────────────────────
 async function settleTrade(tradeId, btn) {
-  setLoading(btn, true, "Settling…");
+  setLoading(btn, true, "Settling...");
 
   try {
     const res = await fetch(`${API_BASE}/trade/settle`, {
@@ -150,12 +207,12 @@ async function settleTrade(tradeId, btn) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
 
-    showToast("success", "🏁 Trade Settled!", `Trade #${tradeId} settled atomically (DvP complete)`);
+    showToast("success", "Trade Settled", `Trade #${tradeId} settled atomically (DvP complete)`);
     await loadTrades();
     await refreshPortfolio();
   } catch (err) {
     showToast("error", "Settle Failed", err.message);
-    setLoading(btn, false, "⚡ Settle");
+    setLoading(btn, false, "Settle");
   }
 }
 
@@ -168,7 +225,7 @@ async function loadTrades() {
     if (!res.ok) throw new Error(await res.text());
     const { trades } = await res.json();
 
-    // Update stats bar
+    // Update stats in dropdown
     updateStats(trades);
 
     if (!trades || trades.length === 0) {
@@ -176,7 +233,6 @@ async function loadTrades() {
         <tr>
           <td colspan="7">
             <div class="empty-state">
-              <div class="empty-icon">📭</div>
               <p>No trades yet. Create your first trade above.</p>
             </div>
           </td>
@@ -200,7 +256,6 @@ async function loadTrades() {
     tbody.innerHTML = `
       <tr><td colspan="7">
         <div class="empty-state">
-          <div class="empty-icon">⚠️</div>
           <p>Failed to load trades: ${err.message}</p>
         </div>
       </td></tr>`;
@@ -209,27 +264,27 @@ async function loadTrades() {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 function shortAddr(addr) {
-  if (!addr) return "—";
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+  if (!addr) return "\u2014";
+  return `${addr.slice(0, 6)}\u2026${addr.slice(-4)}`;
 }
 
 function statusBadge(status) {
   const map = {
-    Created:   `<span class="badge badge-created">⏳ Created</span>`,
-    Confirmed: `<span class="badge badge-confirmed">✅ Confirmed</span>`,
-    Settled:   `<span class="badge badge-settled">🏁 Settled</span>`,
+    Created:   `<span class="badge badge-created">Created</span>`,
+    Confirmed: `<span class="badge badge-confirmed">Confirmed</span>`,
+    Settled:   `<span class="badge badge-settled">Settled</span>`,
   };
   return map[status] || `<span class="badge">${status}</span>`;
 }
 
 function actionsHTML(trade) {
   if (trade.status === "Created") {
-    return `<button class="btn btn-confirm" onclick="confirmTrade('${trade.tradeId}', this)">✓ Confirm</button>`;
+    return `<button class="btn btn-confirm" onclick="confirmTrade('${trade.tradeId}', this)">Confirm</button>`;
   }
   if (trade.status === "Confirmed") {
-    return `<button class="btn btn-settle" onclick="settleTrade('${trade.tradeId}', this)">⚡ Settle</button>`;
+    return `<button class="btn btn-settle" onclick="settleTrade('${trade.tradeId}', this)">Settle</button>`;
   }
-  return `<span class="badge badge-settled" style="opacity:0.5;font-size:0.7rem;">Complete</span>`;
+  return `<span class="badge badge-settled" style="opacity:0.4;font-size:0.65rem;">Complete</span>`;
 }
 
 function updateStats(trades) {
@@ -249,12 +304,10 @@ function setLoading(btn, loading, label) {
 // ── Toast Notifications ────────────────────────────────────────────────
 function showToast(type, title, message, duration = 5000) {
   const container = document.getElementById("toast-container");
-  const icons = { success: "✅", error: "❌", info: "ℹ️" };
 
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.innerHTML = `
-    <span class="toast-icon">${icons[type] || "ℹ️"}</span>
     <div class="toast-body">
       <div class="toast-title">${title}</div>
       <div class="toast-msg">${message}</div>
@@ -270,7 +323,15 @@ function showToast(type, title, message, duration = 5000) {
 }
 
 // ── Start ──────────────────────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", init);
+document.addEventListener("DOMContentLoaded", () => {
+  initParallax();
+  initLanding();
+});
 
 // Auto-refresh trades every 15 seconds
-setInterval(loadTrades, 15000);
+setInterval(() => {
+  const dashboard = document.getElementById("dashboard");
+  if (dashboard.classList.contains("active")) {
+    loadTrades();
+  }
+}, 15000);

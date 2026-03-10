@@ -7,6 +7,7 @@
 const express = require("express");
 const router = express.Router();
 const {
+  provider,
   deployment,
   buyerWallet,
   sellerWallet,
@@ -15,6 +16,27 @@ const {
   settlementEngine,
   ethers,
 } = require("../blockchain");
+
+// Helper: get the latest nonce from the chain (avoids ethers internal cache desync)
+async function freshNonce(wallet) {
+  return await provider.getTransactionCount(wallet.address, "pending");
+}
+
+// Simple mutex per wallet address to serialize transactions
+const txLocks = {};
+async function withLock(key, fn) {
+  while (txLocks[key]) {
+    await txLocks[key];
+  }
+  let resolve;
+  txLocks[key] = new Promise(r => resolve = r);
+  try {
+    return await fn();
+  } finally {
+    delete txLocks[key];
+    resolve();
+  }
+}
 
 // In-memory trade cache for quick front-end listing
 // (The source of truth is always the blockchain)
@@ -78,25 +100,30 @@ router.post("/confirm", async (req, res) => {
     const { tradeId } = req.body;
     if (!tradeId) return res.status(400).json({ error: "Missing tradeId" });
 
-    // Seller approves the SettlementEngine to transfer BOND tokens on their behalf
-    const engineAddress = await settlementEngine.getAddress();
-    const trade = await settlementEngine.trades(tradeId);
-    const assetAmount = trade.assetAmount;
+    const result = await withLock(sellerWallet.address, async () => {
+      // Seller approves the SettlementEngine to transfer BOND tokens on their behalf
+      const engineAddress = await settlementEngine.getAddress();
+      const trade = await settlementEngine.trades(tradeId);
+      const assetAmount = trade.assetAmount;
 
-    const assetAsSeller = assetToken.connect(sellerWallet);
-    const approveTx = await assetAsSeller.approve(engineAddress, assetAmount);
-    await approveTx.wait();
+      const assetAsSeller = assetToken.connect(sellerWallet);
+      let nonce = await freshNonce(sellerWallet);
+      const approveTx = await assetAsSeller.approve(engineAddress, assetAmount, { nonce });
+      await approveTx.wait();
 
-    // Seller confirms the trade
-    const engineAsSeller = settlementEngine.connect(sellerWallet);
-    const tx = await engineAsSeller.confirmTrade(tradeId);
-    const receipt = await tx.wait();
+      // Seller confirms the trade
+      const engineAsSeller = settlementEngine.connect(sellerWallet);
+      nonce = await freshNonce(sellerWallet);
+      const tx = await engineAsSeller.confirmTrade(tradeId, { nonce });
+      const receipt = await tx.wait();
+      return receipt;
+    });
 
     if (tradeCache[tradeId]) {
       tradeCache[tradeId].status = "Confirmed";
     }
 
-    res.json({ success: true, txHash: receipt.hash });
+    res.json({ success: true, txHash: result.hash });
   } catch (err) {
     console.error("confirmTrade error:", err);
     res.status(500).json({ error: err.message });
@@ -113,24 +140,29 @@ router.post("/settle", async (req, res) => {
     const { tradeId } = req.body;
     if (!tradeId) return res.status(400).json({ error: "Missing tradeId" });
 
-    const engineAddress = await settlementEngine.getAddress();
-    const trade = await settlementEngine.trades(tradeId);
-    const paymentAmount = trade.paymentAmount;
+    const result = await withLock(buyerWallet.address, async () => {
+      const engineAddress = await settlementEngine.getAddress();
+      const trade = await settlementEngine.trades(tradeId);
+      const paymentAmount = trade.paymentAmount;
 
-    // Buyer approves SettlementEngine to spend SET tokens
-    const paymentAsBuyer = paymentToken.connect(buyerWallet);
-    const approveTx = await paymentAsBuyer.approve(engineAddress, paymentAmount);
-    await approveTx.wait();
+      // Buyer approves SettlementEngine to spend SET tokens
+      const paymentAsBuyer = paymentToken.connect(buyerWallet);
+      let nonce = await freshNonce(buyerWallet);
+      const approveTx = await paymentAsBuyer.approve(engineAddress, paymentAmount, { nonce });
+      await approveTx.wait();
 
-    // Anyone can call settleTrade - using deployer for simplicity
-    const tx = await settlementEngine.settleTrade(tradeId);
-    const receipt = await tx.wait();
+      // Anyone can call settleTrade - using deployer for simplicity
+      const deployerNonce = await freshNonce(require("../blockchain").deployerWallet);
+      const tx = await settlementEngine.settleTrade(tradeId, { nonce: deployerNonce });
+      const receipt = await tx.wait();
+      return receipt;
+    });
 
     if (tradeCache[tradeId]) {
       tradeCache[tradeId].status = "Settled";
     }
 
-    res.json({ success: true, txHash: receipt.hash });
+    res.json({ success: true, txHash: result.hash });
   } catch (err) {
     console.error("settleTrade error:", err);
     res.status(500).json({ error: err.message });
@@ -170,7 +202,7 @@ router.get("/list", async (req, res) => {
 // GET /portfolio/:address
 // Returns BOND and SET balances for a given wallet address.
 // --------------------------------------------------------
-router.get("/portfolio/:address", async (req, res) => {
+router.get("/:address", async (req, res) => {
   try {
     const { address } = req.params;
 
