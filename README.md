@@ -3,6 +3,8 @@
 > Educational Prototype -- Simulated Delivery vs Payment (DvP) using smart contracts on a local Hardhat blockchain.
 > This project does not interact with real financial systems or real money.
 
+https://drive.google.com/file/d/1yrDS5JShOH_2JlZr0zdEvxc2tmYH36tI/view?usp=sharing
+(demo link)
 ---
 
 ## Project Structure
