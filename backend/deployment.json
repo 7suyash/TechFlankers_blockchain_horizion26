@@ -1,0 +1,11 @@
+{
+  "network": "sepolia",
+  "deployer": "0x308e267198c4C1ff1586C25ea576BEfFfFB37442",
+  "buyer": "0x345E8C7deeF26Eb70081223daD0D79D5A9cD4052",
+  "seller": "0x2E5B790eeFc6a4523049668e1a4F96310Ae0291d",
+  "contracts": {
+    "AssetToken": "0x6C2da9ac4dBF39949bdB742B824692c687CD4651",
+    "PaymentToken": "0x679C2cD6d05d8415E218D9739dE129585f36E8d0",
+    "SettlementEngine": "0xbbC882397af645Be2A5c01355EE52cc9F26f8A60"
+  }
+}
