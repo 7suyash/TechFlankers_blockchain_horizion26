@@ -61,6 +61,9 @@ function initRoleToggle() {
       roleBtns.forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
 
+      // Go to dashboard if not already there
+      openDashboard();
+
       // Switch portfolio account to match role
       switchPortfolioAccount(role);
     });
@@ -94,7 +97,7 @@ function initLanding() {
 
 // ── Dashboard Entry Animations ─────────────────────────────────────
 function onDashboardReady() {
-  const sections = document.querySelectorAll(".canvas-section, .table-section");
+  const sections = document.querySelectorAll(".canvas-section, .table-section, .velocity-card-wrapper");
 
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -152,7 +155,18 @@ async function switchPortfolioAccount(type) {
   const roleBtn = document.getElementById(`role-${type}`);
   if (roleBtn) roleBtn.classList.add("active");
 
+  // Show/Hide Trade Creation based on role
+  const sectionTrade = document.getElementById("section-trade");
+  if (sectionTrade) {
+    if (type === "buyer") {
+      sectionTrade.style.display = "block";
+    } else {
+      sectionTrade.style.display = "none";
+    }
+  }
+
   await refreshPortfolio();
+  await loadTrades(); // Refresh trades to update actions based on role
 }
 
 async function refreshPortfolio() {
@@ -173,9 +187,10 @@ async function refreshPortfolio() {
     document.getElementById("set-balance").textContent =
       parseFloat(data.paymentBalance).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
-    if (currentPortfolioAccount === "seller") {
-      const el = document.getElementById("seller-address");
-      if (!el.value) el.value = address;
+    if (currentPortfolioAccount === "buyer") {
+      // Optional: don't autofill seller here unless we want to, 
+      // since there could be multiple sellers. 
+      // The original code was setting seller-address to seller address when portfolio was seller.
     }
   } catch (err) {
     document.getElementById("bond-balance").textContent = "ERR";
@@ -274,6 +289,7 @@ async function loadTrades() {
     const { trades } = await res.json();
 
     updateStats(trades);
+    updateVelocityCard(trades);
 
     if (!trades || trades.length === 0) {
       tbody.innerHTML = `
@@ -329,9 +345,16 @@ function statusBadge(status) {
 
 function actionsHTML(trade) {
   if (trade.status === "Created") {
-    return `<button class="btn btn-confirm" onclick="confirmTrade('${trade.tradeId}', this)">Confirm</button>`;
+    // Only seller can confirm
+    if (currentPortfolioAccount === "seller") {
+      return `<button class="btn btn-confirm" onclick="confirmTrade('${trade.tradeId}', this)">Confirm</button>`;
+    }
+    return `<span class="badge" style="opacity:0.6;font-size:0.65rem;">Waiting for Seller</span>`;
   }
   if (trade.status === "Confirmed") {
+    // Only deployer/clearingHouse can settle, although right now any button might trigger it in UI
+    // For demo purposes, we will leave the settle button visible, or we could let the seller/buyer do it
+    // if backend allows. The backend route calls it using identities.
     return `<button class="btn btn-settle" onclick="settleTrade('${trade.tradeId}', this)">Settle</button>`;
   }
   return `<span class="badge badge-settled" style="opacity:0.4;font-size:0.65rem;">Complete</span>`;
@@ -372,6 +395,159 @@ function showToast(type, title, message, duration = 5000) {
   }, duration);
 }
 
+// ── Transaction Velocity Card — Real Data Only ────────────────────────
+function updateVelocityCard(trades) {
+  const dataView    = document.getElementById('velocity-data-view');
+  const emptyState  = document.getElementById('velocity-empty-state');
+  const liveBadge   = document.getElementById('velocity-live-badge');
+
+  if (!dataView || !emptyState) return;
+
+  // Extract settled trades that have a valid duration
+  const settledTrades = (trades || []).filter(t => t.status === 'Settled' && t.duration && Number(t.duration) > 0);
+
+  if (settledTrades.length === 0) {
+    // Show empty state, hide data view
+    dataView.style.display = 'none';
+    emptyState.style.display = 'flex';
+    if (liveBadge) liveBadge.style.display = 'none';
+    return;
+  }
+
+  // We have real data — show data view, hide empty state
+  dataView.style.display = 'block';
+  emptyState.style.display = 'none';
+  if (liveBadge) liveBadge.style.display = 'inline-flex';
+
+  // Convert durations from ms to seconds
+  const durations = settledTrades.map(t => Number(t.duration) / 1000);
+  const tradeIds  = settledTrades.map(t => '#' + t.tradeId);
+
+  const avg    = durations.reduce((a, b) => a + b, 0) / durations.length;
+  const peak   = Math.max(...durations);
+  const min    = Math.min(...durations);
+  const latest = durations[durations.length - 1];
+
+  // Update metrics
+  const metricEl  = document.getElementById('velocity-metric');
+  const peakEl    = document.getElementById('vel-peak');
+  const minEl     = document.getElementById('vel-min');
+  const settledEl = document.getElementById('vel-settled');
+  const latestEl  = document.getElementById('vel-latest');
+
+  if (metricEl)  metricEl.textContent  = formatDuration(avg);
+  if (peakEl)    peakEl.textContent    = formatDuration(peak);
+  if (minEl)     minEl.textContent     = formatDuration(min);
+  if (settledEl) settledEl.textContent = settledTrades.length;
+  if (latestEl)  latestEl.textContent  = formatDuration(latest);
+
+  // Delta badge — compare latest to avg
+  const deltaEl    = document.getElementById('velocity-delta');
+  const deltaValEl = document.getElementById('velocity-delta-val');
+  if (deltaEl && deltaValEl && durations.length >= 2) {
+    const change = ((avg - latest) / avg * 100);
+    if (Math.abs(change) > 0.5) {
+      deltaEl.style.display = 'inline-flex';
+      deltaEl.className = 'velocity-card__metric-delta ' + (change > 0 ? 'positive' : 'negative');
+      // Flip the arrow for negative
+      const arrow = deltaEl.querySelector('svg path');
+      if (arrow) {
+        arrow.setAttribute('d', change > 0 ? 'M6 2L10 7H2L6 2Z' : 'M6 10L10 5H2L6 10Z');
+      }
+      deltaValEl.textContent = Math.abs(change).toFixed(0) + '%';
+    } else {
+      deltaEl.style.display = 'none';
+    }
+  } else if (deltaEl) {
+    deltaEl.style.display = 'none';
+  }
+
+  // Render SVG graph
+  renderVelocityGraph(durations, tradeIds);
+}
+
+function formatDuration(seconds) {
+  if (seconds >= 60) return (seconds / 60).toFixed(1) + 'm';
+  return seconds.toFixed(1) + 's';
+}
+
+function renderVelocityGraph(data, labels) {
+  const svgWidth  = 600;
+  const svgHeight = 160;
+  const padX      = 20;
+  const padTop    = 15;
+  const padBot    = 15;
+  const graphW    = svgWidth - padX * 2;
+  const graphH    = svgHeight - padTop - padBot;
+
+  const lineEl = document.getElementById('velocity-line');
+  const areaEl = document.getElementById('velocity-area');
+  const dotsEl = document.getElementById('velocity-dots');
+  const axisEl = document.getElementById('velocity-time-axis');
+
+  if (!lineEl || !areaEl || !dotsEl) return;
+
+  // If only 1 data point, render a single dot with no line
+  if (data.length === 1) {
+    const cx = svgWidth / 2;
+    const cy = svgHeight / 2;
+    lineEl.removeAttribute('d');
+    areaEl.removeAttribute('d');
+    dotsEl.innerHTML = `<circle cx="${cx}" cy="${cy}" r="5" opacity="1"><title>${data[0].toFixed(1)}s</title></circle>`;
+    if (axisEl) axisEl.innerHTML = `<span>${labels[0]}</span>`;
+    return;
+  }
+
+  // Calculate coords
+  const yMin   = Math.min(...data) * 0.7;
+  const yMax   = Math.max(...data) * 1.2;
+  const range  = yMax - yMin || 1;
+
+  const coords = data.map((val, i) => ({
+    x: padX + (i / (data.length - 1)) * graphW,
+    y: padTop + (1 - (val - yMin) / range) * graphH
+  }));
+
+  // Build smooth cubic bezier path
+  let d = `M ${coords[0].x},${coords[0].y}`;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p0 = coords[Math.max(0, i - 1)];
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    const p3 = coords[Math.min(coords.length - 1, i + 2)];
+    const tension = 0.3;
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+  }
+
+  lineEl.setAttribute('d', d);
+  areaEl.setAttribute('d', d + ` L ${coords[coords.length - 1].x},${svgHeight} L ${coords[0].x},${svgHeight} Z`);
+
+  // Render dots with tooltips
+  dotsEl.innerHTML = coords.map((c, i) =>
+    `<circle cx="${c.x}" cy="${c.y}" r="3" opacity="0.7"><title>${labels[i]}: ${data[i].toFixed(1)}s</title></circle>`
+  ).join('');
+
+  // Render time axis labels (trade IDs)
+  if (axisEl) {
+    // Show at most 7 labels evenly spaced
+    const maxLabels = Math.min(7, labels.length);
+    const step = Math.max(1, Math.floor((labels.length - 1) / (maxLabels - 1)));
+    let axisHTML = '';
+    for (let i = 0; i < labels.length; i += step) {
+      axisHTML += `<span>${labels[i]}</span>`;
+    }
+    // Always include the last label
+    if ((labels.length - 1) % step !== 0) {
+      axisHTML += `<span>${labels[labels.length - 1]}</span>`;
+    }
+    axisEl.innerHTML = axisHTML;
+  }
+}
+
 // ── Start ──────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   initParallax();
@@ -385,3 +561,127 @@ setInterval(() => {
     loadTrades();
   }
 }, 15000);
+
+// ── Transaction History Modal ──────────────────────────────────────────
+async function openTxHistoryModal() {
+  const modal = document.getElementById('tx-history-modal');
+  const listContainer = document.getElementById('tx-history-list');
+  modal.style.display = 'flex';
+  listContainer.innerHTML = '<div style="text-align:center; padding:1rem;">Loading...</div>';
+
+  try {
+    const res = await fetch(`${API_BASE}/transactions/history`);
+    if (!res.ok) throw new Error('Failed to fetch transaction history');
+    const files = await res.json();
+
+    if (files.length === 0) {
+      listContainer.innerHTML = '<div style="text-align:center; padding:1rem; opacity:0.6;">No transaction logs found yet.</div>';
+      return;
+    }
+
+    listContainer.innerHTML = files.map(file => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:0.75rem; background:#1A202C; border-radius:6px; border:1px solid #2D3748;">
+        <span style="font-family:monospace; font-size:0.85rem;">${file}</span>
+        <button onclick="downloadTxFile('${file}')" style="background:#00D4FF; color:#0A0A0A; border:none; border-radius:4px; padding:0.4rem 0.8rem; font-size:0.8rem; cursor:pointer; font-weight:bold;">Download</button>
+      </div>
+    `).join('');
+  } catch (err) {
+    listContainer.innerHTML = `<div style="color:#F56565; padding:1rem;">Error: ${err.message}</div>`;
+  }
+}
+
+function closeTxHistoryModal() {
+  document.getElementById('tx-history-modal').style.display = 'none';
+}
+
+function downloadTxFile(fileName) {
+  window.open(`${API_BASE}/transactions/download/${fileName}`, '_blank');
+}
+
+// ── Marketplace ──────────────────────────────────────────────────────
+function openMarketplace() {
+  document.querySelectorAll(".role-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("btn-marketplace").classList.add("active");
+  
+  const vDash = document.getElementById("dashboard-view");
+  const vMkt = document.getElementById("marketplace-view");
+  if (vDash) vDash.style.display = "none";
+  if (vMkt) vMkt.style.display = "block";
+  
+  const crumb = document.getElementById("breadcrumb-current");
+  if (crumb) crumb.textContent = "Marketplace";
+  
+  renderMarketplace();
+}
+
+function openDashboard() {
+  const vDash = document.getElementById("dashboard-view");
+  const vMkt = document.getElementById("marketplace-view");
+  if (vDash) vDash.style.display = "block";
+  if (vMkt) vMkt.style.display = "none";
+  
+  const crumb = document.getElementById("breadcrumb-current");
+  if (crumb) crumb.textContent = "Trade Settlement";
+}
+
+function renderMarketplace() {
+  const grid = document.getElementById("marketplace-grid");
+  if (!grid || !window.marketplaceStocks) return;
+  
+  let html = "";
+  window.marketplaceStocks.forEach(stock => {
+    let brokersHtml = stock.brokers.map(b => `
+      <div style="margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px dashed rgba(255,255,255,0.1);">
+        <div style="font-size: 0.85rem; font-weight: 500; color: #E2E8F0;">${b.name}</div>
+        <div style="font-size: 0.7rem; color: #8a8a8a; font-family: monospace; margin: 4px 0;">Wallet: <span style="user-select: all;">${b.wallet}</span></div>
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
+          <button onclick="copyBrokerWallet('${b.wallet}')" style="padding: 4px 10px; font-size: 0.65rem; background: transparent; border: 1px solid #2a2a2a; color: #8a8a8a; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Copy Address</button>
+          <button onclick="sendMarketplaceTrade('${b.wallet}', '${stock.symbol}', '${stock.price}')" style="padding: 4px 10px; font-size: 0.65rem; background: #3b82f6; border: none; color: white; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Send Trade</button>
+        </div>
+      </div>
+    `).join("");
+    
+    html += `
+      <div style="background: #1a1a1a; border: 1px solid #222222; border-radius: 8px; padding: 1.5rem; display: flex; flex-direction: column;">
+        <h3 style="font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; color: #e2e2e2; margin-bottom: 4px;">${stock.companyName}</h3>
+        <div style="font-size: 0.75rem; color: #8a8a8a;">Symbol: <span style="color: #facc15;">${stock.symbol}</span></div>
+        <div style="font-size: 0.75rem; color: #8a8a8a; margin-bottom: 1.25rem;">Price: <span style="color: #2dd4bf;">${stock.price}</span></div>
+        <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: #555555; margin-bottom: 0.75rem; border-bottom: 1px solid #222; padding-bottom: 4px;">Brokers Offering This Stock:</div>
+        <div style="flex: 1;">${brokersHtml}</div>
+      </div>
+    `;
+  });
+  grid.innerHTML = html;
+}
+
+function copyBrokerWallet(address) {
+  navigator.clipboard.writeText(address).then(() => {
+    showToast("success", "Address copied", "Address copied to clipboard");
+  }).catch(err => {
+    showToast("error", "Copy Failed", "Could not copy address");
+  });
+}
+
+async function sendMarketplaceTrade(brokerWallet, symbol, price) {
+  openDashboard();
+  
+  // Act as Buyer
+  await switchPortfolioAccount("buyer");
+  
+  // Pre-fill trade form
+  document.getElementById("seller-address").value = brokerWallet;
+  document.getElementById("asset-amount").value = "1";
+  
+  // Parse numeric price
+  const priceNum = price.replace(/[^0-9.]/g, '');
+  document.getElementById("payment-amount").value = priceNum;
+  
+  // Temporarily update labels for context
+  const lblAsset = document.getElementById("lbl-asset-amount");
+  const lblPayment = document.getElementById("lbl-payment-amount");
+  if(lblAsset) lblAsset.textContent = `Asset Amount (${symbol})`;
+  if(lblPayment) lblPayment.textContent = `Payment Amount (${price})`;
+  
+  // Highlight fields
+  document.getElementById("seller-address").focus();
+}

@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// ============================================================
-// SettlementEngine.sol
-// PURPOSE: Orchestrates Delivery vs Payment (DvP) atomic settlement.
-// A trade is created, confirmed, and then settled in one atomic transaction.
-// This is a simulation contract for educational purposes only.
-// DO NOT use with real financial systems or real money.
-// ============================================================
+
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract SettlementEngine {
-    // Possible states of a trade
+   
     enum TradeStatus { Created, Confirmed, Settled }
 
-    // Trade data structure
+    // Trade
     struct Trade {
         uint256 tradeId;
         address buyer;
@@ -25,23 +19,23 @@ contract SettlementEngine {
         TradeStatus status;
     }
 
-    // References to the ERC-20 token contracts
+    
     IERC20 public assetToken;
     IERC20 public paymentToken;
 
-    // The clearing corporation / exchange node
+    
     address public clearingHouse;
 
-    // Trade counter to generate unique IDs
+    
     uint256 private tradeCounter;
 
-    // Maps tradeId => Trade
+    
     mapping(uint256 => Trade) public trades;
 
-    // Array of all trade IDs for enumeration
+    
     uint256[] public tradeIds;
 
-    // Events emitted throughout the trade lifecycle
+    
     event TradeCreated(uint256 indexed tradeId, address indexed buyer, address indexed seller);
     event TradeConfirmed(uint256 indexed tradeId);
     event TradeSettled(uint256 indexed tradeId);

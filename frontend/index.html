@@ -58,10 +58,36 @@
             <svg class="role-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <rect x="2" y="3" width="20" height="14" rx="2"/>
               <path d="M8 21h8M12 17v4"/>
+              <span>Seller</span>
             </svg>
-            <span>Seller</span>
           </button>
         </div>
+      </div>
+
+      <!-- Transaction History Button -->
+      <div class="sidebar-nav" style="margin-top: 1rem;">
+        <button class="role-btn" id="btn-tx-history" onclick="openTxHistoryModal()">
+          <svg class="role-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <span>Transaction History</span>
+        </button>
+      </div>
+
+      <!-- Marketplace Button -->
+      <div class="sidebar-nav" style="margin-top: 0.25rem;">
+        <button class="role-btn" id="btn-marketplace" onclick="openMarketplace()">
+          <svg class="role-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+          <span>Marketplace</span>
+        </button>
       </div>
 
       <!-- Footer: version + clock pinned to bottom -->
@@ -82,7 +108,7 @@
             <nav class="breadcrumb">
               <span>Dashboard</span>
               <span class="breadcrumb-sep">/</span>
-              <span class="breadcrumb-active">Trade Settlement</span>
+              <span class="breadcrumb-active" id="breadcrumb-current">Trade Settlement</span>
             </nav>
 
             <!-- 3-dot stats hover menu -->
@@ -116,7 +142,10 @@
         <!-- Main Content -->
         <main class="main-content">
 
-          <!-- ── Canvas: Portfolio + Trade Creation ── -->
+          <!-- DASHBOARD VIEW -->
+          <div id="dashboard-view">
+
+            <!-- ── Canvas: Portfolio + Trade Creation ── -->
           <div class="canvas">
 
             <!-- Left: Portfolio -->
@@ -172,11 +201,11 @@
 
                 <div class="form-grid">
                   <div class="form-group">
-                    <label class="form-label" for="asset-amount">Asset Amount (BOND)</label>
+                    <label class="form-label" id="lbl-asset-amount" for="asset-amount">Asset Amount (BOND)</label>
                     <input class="form-input" type="number" id="asset-amount" placeholder="e.g. 100" min="1" step="1" required />
                   </div>
                   <div class="form-group">
-                    <label class="form-label" for="payment-amount">Payment Amount (SET)</label>
+                    <label class="form-label" id="lbl-payment-amount" for="payment-amount">Payment Amount (SET)</label>
                     <input class="form-input" type="number" id="payment-amount" placeholder="e.g. 500" min="1" step="1" required />
                   </div>
                 </div>
@@ -234,6 +263,120 @@
             </div>
           </div>
 
+          <!-- Pencil-line divider -->
+          <div class="pencil-divider"></div>
+
+          <!-- ── Transaction Velocity Card ── -->
+          <div class="velocity-card-wrapper" id="section-velocity">
+            <div class="velocity-card">
+              <!-- Ambient glow layer -->
+              <div class="velocity-card__glow"></div>
+
+              <!-- Card content -->
+              <div class="velocity-card__content">
+                <!-- Header row -->
+                <div class="velocity-card__header">
+                  <div class="velocity-card__header-left">
+                    <span class="velocity-card__label">Transaction Velocity</span>
+                    <h3 class="velocity-card__title">Transaction Time</h3>
+                  </div>
+                  <div class="velocity-card__header-right">
+                    <span class="velocity-card__badge-live" id="velocity-live-badge" style="display:none;">
+                      <span class="velocity-card__live-dot"></span>
+                      LIVE
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Primary metric — hidden until real data -->
+                <div id="velocity-data-view" style="display:none;">
+                  <div class="velocity-card__metric-row">
+                    <span class="velocity-card__metric" id="velocity-metric">—</span>
+                    <span class="velocity-card__metric-delta" id="velocity-delta" style="display:none;">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M6 2L10 7H2L6 2Z" fill="currentColor"/>
+                      </svg>
+                      <span id="velocity-delta-val"></span>
+                    </span>
+                  </div>
+                  <p class="velocity-card__metric-sub">avg. settlement latency (from real trades)</p>
+
+                  <!-- SVG Line Graph -->
+                  <div class="velocity-card__graph-container">
+                    <svg class="velocity-card__graph" id="velocity-graph" viewBox="0 0 600 160" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="velocity-area-grad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stop-color="#00D4FF" stop-opacity="0.35"/>
+                          <stop offset="50%" stop-color="#00D4FF" stop-opacity="0.10"/>
+                          <stop offset="100%" stop-color="#00D4FF" stop-opacity="0"/>
+                        </linearGradient>
+                        <filter id="velocity-glow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feGaussianBlur stdDeviation="3" result="blur"/>
+                          <feMerge>
+                            <feMergeNode in="blur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                          </feMerge>
+                        </filter>
+                      </defs>
+                      <path id="velocity-area" class="velocity-card__area" fill="url(#velocity-area-grad)"/>
+                      <path id="velocity-line" class="velocity-card__line" fill="none" stroke="#00D4FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#velocity-glow)"/>
+                      <g id="velocity-dots" class="velocity-card__dots"></g>
+                    </svg>
+                    <div class="velocity-card__time-axis" id="velocity-time-axis"></div>
+                  </div>
+
+                  <!-- Footer stats row -->
+                  <div class="velocity-card__footer">
+                    <div class="velocity-card__stat">
+                      <span class="velocity-card__stat-val" id="vel-peak">—</span>
+                      <span class="velocity-card__stat-lbl">Peak</span>
+                    </div>
+                    <div class="velocity-card__stat">
+                      <span class="velocity-card__stat-val" id="vel-min">—</span>
+                      <span class="velocity-card__stat-lbl">Min</span>
+                    </div>
+                    <div class="velocity-card__stat">
+                      <span class="velocity-card__stat-val" id="vel-settled">0</span>
+                      <span class="velocity-card__stat-lbl">Settled</span>
+                    </div>
+                    <div class="velocity-card__stat">
+                      <span class="velocity-card__stat-val" id="vel-latest">—</span>
+                      <span class="velocity-card__stat-lbl">Latest</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Empty state — shown when no settlements exist -->
+                <div id="velocity-empty-state" class="velocity-card__empty">
+                  <div class="velocity-card__empty-icon">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                      <path d="M8 36L16 24L24 30L32 16L40 20" stroke="#00D4FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.25"/>
+                      <circle cx="16" cy="24" r="2.5" fill="#00D4FF" opacity="0.2"/>
+                      <circle cx="24" cy="30" r="2.5" fill="#00D4FF" opacity="0.2"/>
+                      <circle cx="32" cy="16" r="2.5" fill="#00D4FF" opacity="0.2"/>
+                    </svg>
+                  </div>
+                  <p class="velocity-card__empty-title">No settlement data yet</p>
+                  <p class="velocity-card__empty-desc">Settle your first trade to see real transaction velocity metrics here.</p>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          </div> <!-- /#dashboard-view -->
+
+          <!-- MARKETPLACE VIEW -->
+          <div id="marketplace-view" style="display:none;">
+            <div class="section-label">Stocks</div>
+            <div class="section-title">Marketplace</div>
+            <div class="section-desc">Explore stocks from multiple companies and brokers. Start trades directly using broker wallets.</div>
+            
+            <div id="marketplace-grid" style="display: grid; grid-template-columns: 1fr; gap: 2rem; margin-top: 2rem;">
+              <!-- Cards will be injected here -->
+            </div>
+          </div>
+
         </main>
       </div>
     </div>
@@ -242,6 +385,20 @@
   <!-- Toast container -->
   <div id="toast-container"></div>
 
+  <!-- Transaction History Modal -->
+  <div id="tx-history-modal" class="modal" style="display:none; position:fixed; z-index:9999; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background:#13151A; padding:2rem; border-radius:12px; width:450px; max-width:90%; color:#E2E8F0; border: 1px solid #2D3748; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+        <h3 style="margin:0; font-size:1.25rem;">Transaction History Logs</h3>
+        <button onclick="closeTxHistoryModal()" style="background:none; border:none; color:#A0AEC0; font-size:1.5rem; cursor:pointer;">&times;</button>
+      </div>
+      <div id="tx-history-list" style="display:flex; flex-direction:column; gap:0.75rem; max-height:300px; overflow-y:auto; padding-right: 0.5rem;">
+        <!-- Items will be injected here -->
+      </div>
+    </div>
+  </div>
+
+  <script src="data/marketplaceStocks.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
